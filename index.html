@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📰 ニュース収集 (野田市 / 三沢市 深掘り) | Powered by Claude</title>
+<style>
+:root {
+  --bg: #f7f7fb;
+  --card: #ffffff;
+  --text: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+  --border: #e5e7eb;
+  --primary: #6366f1;
+  --primary-2: #a855f7;
+  --success: #16a34a;
+  --warn: #f59e0b;
+  --error: #dc2626;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.65;
+  font-size: 14px;
+}
+.container { max-width: 920px; margin: 0 auto; padding: 24px 18px 80px; }
+header { text-align: center; margin-bottom: 22px; }
+header h1 {
+  margin: 0 0 4px;
+  font-size: 1.6rem;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+header .subtitle { color: var(--text-secondary); font-size: 13px; margin: 0; }
+header .version { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+.card-title {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; font-size: 14px;
+  margin: 0 0 10px;
+}
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+input[type="password"], input[type="text"], textarea {
+  flex: 1;
+  min-width: 200px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13.5px;
+  background: #fafbff;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+input[type="password"]:focus, input[type="text"]:focus, textarea:focus { border-color: var(--primary); background: #fff; }
+textarea { width: 100%; min-height: 70px; resize: vertical; }
+button {
+  font-family: inherit; cursor: pointer; border: none;
+  transition: transform 0.1s, box-shadow 0.15s;
+}
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+.icon-btn {
+  padding: 8px 12px;
+  font-size: 14px;
+  background: #f3f4f6;
+  border-radius: 10px;
+  color: var(--text-secondary);
+}
+.icon-btn:hover:not(:disabled) { background: #e5e7eb; }
+.primary-btn {
+  display: block; width: 100%;
+  padding: 14px 18px;
+  font-size: 15px; font-weight: 700;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 10px rgba(99,102,241,0.25);
+}
+.primary-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(99,102,241,0.35); }
+.notice {
+  font-size: 11.5px; color: var(--text-muted);
+  margin-top: 8px;
+}
+.status {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  display: none;
+}
+.status.active { display: block; }
+.status.info { background: rgba(99,102,241,0.08); color: #4338ca; }
+.status.warn { background: rgba(245,158,11,0.1); color: #92400e; }
+.status.error { background: rgba(220,38,38,0.1); color: #991b1b; }
+.progress {
+  margin: 14px 0 0;
+  display: none;
+}
+.progress.active { display: block; }
+.progress-bar {
+  height: 6px; background: #e5e7eb; border-radius: 100px; overflow: hidden;
+  margin-bottom: 8px;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--primary-2));
+  width: 0%;
+  transition: width 0.3s;
+}
+.progress-stats {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  font-size: 11.5px; color: var(--text-muted);
+}
+.progress-stats strong { color: var(--text-secondary); }
+.spinner {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 2px solid #c7d2fe;
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.activity-log {
+  margin-top: 10px;
+  max-height: 100px; overflow-y: auto;
+  font-size: 11px; color: var(--text-muted);
+  background: #fafbff;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.activity-log .log-line { padding: 1px 0; }
+.result {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 22px;
+  margin-bottom: 16px;
+  display: none;
+}
+.result.active { display: block; }
+.result h1 { font-size: 1.4rem; margin: 0 0 10px; }
+.result h2 { font-size: 1.15rem; margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 2px solid var(--primary); display: inline-block; }
+.result h3 { font-size: 1rem; margin: 16px 0 6px; color: #4338ca; }
+.result h4 { font-size: 0.95rem; margin: 12px 0 4px; }
+.result p { margin: 6px 0; }
+.result ul, .result ol { margin: 6px 0; padding-left: 22px; }
+.result li { margin: 3px 0; }
+.result a {
+  color: var(--primary);
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(99,102,241,0.4);
+}
+.result a:hover { border-bottom-style: solid; }
+.result table { border-collapse: collapse; margin: 10px 0; width: 100%; font-size: 12.5px; }
+.result table th, .result table td { padding: 5px 8px; border: 1px solid var(--border); text-align: left; }
+.result table th { background: #f9fafb; font-weight: 700; }
+.result code { background: #f3f4f6; padding: 1px 6px; border-radius: 4px; font-size: 12px; font-family: ui-monospace, monospace; }
+.result hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.drill-btn {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-left: 6px;
+  padding: 2px 9px;
+  font-size: 10.5px; font-weight: 600;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: white;
+  border-radius: 100px;
+  vertical-align: baseline;
+  border: none;
+}
+.drill-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(99,102,241,0.3); }
+.drill-panel {
+  margin: 12px 0 16px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.04), rgba(168,85,247,0.04));
+  border: 1.5px solid rgba(99,102,241,0.3);
+  position: relative;
+}
+.drill-header {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(99,102,241,0.2);
+  font-size: 13.5px;
+}
+.drill-header strong { color: #4338ca; flex: 1; line-height: 1.4; }
+.drill-close {
+  background: none; border: none; cursor: pointer;
+  font-size: 16px; color: var(--text-muted); padding: 0 0 0 8px; line-height: 1;
+}
+.drill-close:hover { color: var(--text); }
+.drill-body { font-size: 13px; line-height: 1.7; }
+.drill-body h2 { font-size: 14px; margin: 12px 0 4px; padding: 0; border: none; display: block; color: #4338ca; }
+.drill-body h3 { font-size: 13px; margin: 10px 0 4px; color: #4338ca; }
+.drill-loading { display: flex; align-items: center; gap: 8px; padding: 10px 0; color: var(--text-muted); font-size: 12px; }
+.cost-summary {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.05), rgba(168,85,247,0.05));
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.cost-summary strong { color: var(--text); }
+footer {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 24px;
+  padding: 0 16px;
+}
+footer a { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>📰 ニュース収集</h1>
+    <p class="subtitle">本日のニュース + 千葉県野田市付近 / 青森県三沢市付近 を深掘り</p>
+    <p class="version" id="versionTag">v1.0.0</p>
+  </header>
+
+  <div class="card">
+    <div class="card-title">🔑 API 設定</div>
+    <div class="row">
+      <input type="password" id="apiKey" placeholder="sk-ant-api03-..." autocomplete="current-password">
+      <button type="button" class="icon-btn" id="toggleKey" title="表示/非表示">👁</button>
+      <button type="button" class="icon-btn" id="saveKey" title="保存">💾</button>
+      <button type="button" class="icon-btn" id="clearKey" title="削除">🗑</button>
+    </div>
+    <div class="notice">
+      💡 <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a> で取得。「💾」で localStorage に保存。共有 PC では保存しないこと。
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📝 追加要望 (任意)</div>
+    <textarea id="additional" placeholder="例: AI / 円安 / 米中関係 / 半導体 など気になるテーマを書くとそこを重点的に検索します"></textarea>
+  </div>
+
+  <button type="button" class="primary-btn" id="runBtn">📰 本日のニュースを収集</button>
+
+  <div class="status" id="status"></div>
+
+  <div class="progress" id="progress">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-stats">
+      <span id="phaseLabel">⏳ 準備中...</span>
+      <span>🔍 検索 <strong id="searchCount">0</strong>/<strong id="searchMax">22</strong></span>
+      <span>📝 <strong id="charCount">0</strong> 文字</span>
+      <span>💵 <strong id="costEst">$0.000</strong></span>
+    </div>
+    <div class="activity-log" id="activityLog"></div>
+  </div>
+
+  <div class="result" id="result"></div>
+
+  <footer>
+    <p>※ <a href="https://www.anthropic.com" target="_blank" rel="noopener">Anthropic Claude Haiku 4.5</a> + <a href="https://news.google.com" target="_blank" rel="noopener">Google News RSS</a> + <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo Weather</a> (すべて無料 API、APIキー不要のもの含む)</p>
+    <p>投資助言ではありません。各記事の出典は markdown リンクから直接ジャンプできます。</p>
+  </footer>
+</div>
+
+<script>
+'use strict';
+const APP_VERSION = 'v1.0.0';
+document.getElementById('versionTag').textContent = APP_VERSION;
+
+// ===== UI helpers =====
+const $ = id => document.getElementById(id);
+const apiKeyInput = $('apiKey');
+const additionalInput = $('additional');
+const runBtn = $('runBtn');
+const statusEl = $('status');
+const progressEl = $('progress');
+const progressFill = $('progressFill');
+const phaseLabel = $('phaseLabel');
+const searchCountEl = $('searchCount');
+const searchMaxEl = $('searchMax');
+const charCountEl = $('charCount');
+const costEstEl = $('costEst');
+const activityLog = $('activityLog');
+const resultDiv = $('result');
+
+const STORAGE_KEY = 'anthropic_api_key_news_standalone';
+
+function showStatus(msg, kind) {
+  statusEl.className = 'status active ' + (kind || 'info');
+  statusEl.textContent = msg;
+}
+function hideStatus() { statusEl.className = 'status'; }
+function setProgress(pct) { progressFill.style.width = Math.max(0, Math.min(100, pct)) + '%'; }
+function setPhase(text) { phaseLabel.textContent = text; }
+function addActivity(msg) {
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  const t = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  div.textContent = `[${t}] ${msg}`;
+  activityLog.appendChild(div);
+  activityLog.scrollTop = activityLog.scrollHeight;
+}
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ===== API key persistence =====
+const savedKey = localStorage.getItem(STORAGE_KEY);
+if (savedKey) apiKeyInput.value = savedKey;
+$('toggleKey').addEventListener('click', () => {
+  apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
+});
+$('saveKey').addEventListener('click', () => {
+  const k = apiKeyInput.value.trim();
+  if (!k) { showStatus('⚠️ APIキーを入力してください', 'warn'); return; }
+  localStorage.setItem(STORAGE_KEY, k);
+  showStatus('✅ APIキーを保存しました (このブラウザの localStorage)', 'info');
+});
+$('clearKey').addEventListener('click', () => {
+  if (!confirm('APIキーを削除しますか？')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  apiKeyInput.value = '';
+  showStatus('🗑 APIキーを削除しました', 'info');
+});
+
+// ===== Google News RSS fetcher =====
+async function fetchGoogleNewsRSS(query, maxItems) {
+  maxItems = maxItems || 8;
+  const rss = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=ja&gl=JP&ceid=JP:ja`;
+  const proxies = [
+    `https://corsproxy.io/?${encodeURIComponent(rss)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(rss)}`
+  ];
+  for (const url of proxies) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined });
+      if (!res.ok) continue;
+      const xml = await res.text();
+      const doc = new DOMParser().parseFromString(xml, 'text/xml');
+      if (doc.querySelector('parsererror')) continue;
+      const items = Array.from(doc.querySelectorAll('item')).slice(0, maxItems).map(it => {
+        const title = (it.querySelector('title')?.textContent || '').trim();
+        const link = (it.querySelector('link')?.textContent || '').trim();
+        const pubDate = (it.querySelector('pubDate')?.textContent || '').trim();
+        const source = (it.querySelector('source')?.textContent || '').trim();
+        return { title, link, pubDate, source };
+      }).filter(x => x.title && x.link);
+      if (items.length > 0) return items;
+    } catch (e) { /* try next */ }
+  }
+  return [];
+}
+
+function buildLocalNewsPromptBlock(groups) {
+  const haveAny = groups.some(g => g.items && g.items.length > 0);
+  if (!haveAny) return '';
+  const sections = groups.map(g => {
+    if (!g.items || g.items.length === 0) {
+      return `─── ${g.label} ───\n(RSS取得なし。web_search で追加調査してください)`;
+    }
+    const lines = g.items.map((it, i) => {
+      const dt = it.pubDate ? ` | ${it.pubDate}` : '';
+      const src = it.source ? ` | 出典: ${it.source}` : '';
+      return `${i + 1}. ${it.title}${src}${dt}\n   URL: ${it.link}`;
+    }).join('\n');
+    return `─── ${g.label} (${g.items.length}件) ───\n${lines}`;
+  }).join('\n\n');
+  return `
+
+【★ 事前取得済みローカルニュース (Google News RSS, 実 URL) ★】
+${sections}
+
+★ 上記 URL は実データ取得済み。出力では必ず [タイトル](URL) の markdown リンク形式で記載。
+★ URL を一切捏造禁止(上記 URL or web_search の結果 URL のみ使用)。
+★ 件数が少ない場合は追加で web_search してさらに掘り下げてよい。
+`;
+}
+
+// ===== Open-Meteo weather (optional, lightweight) =====
+const CITIES = [
+  { name: '青森', emoji: '🍎', lat: 40.82, lon: 140.74 },
+  { name: '三沢', emoji: '✈️', lat: 40.69, lon: 141.37 },
+  { name: '東京', emoji: '🗼', lat: 35.68, lon: 139.69 },
+  { name: '野田',  emoji: '🏯', lat: 35.95, lon: 139.87 },
+  { name: '大阪', emoji: '🏯', lat: 34.69, lon: 135.50 },
+  { name: '札幌', emoji: '❄️', lat: 43.06, lon: 141.35 }
+];
+function wmoEmoji(c) {
+  if (c == null) return { e: '❓', l: '不明' };
+  if (c === 0) return { e: '☀️', l: '快晴' };
+  if (c <= 2) return { e: '🌤', l: '晴れ' };
+  if (c <= 3) return { e: '☁️', l: 'くもり' };
+  if (c <= 48) return { e: '🌫', l: '霧' };
+  if (c <= 57) return { e: '🌦', l: '霧雨' };
+  if (c <= 67) return { e: '🌧', l: '雨' };
+  if (c <= 77) return { e: '❄️', l: '雪' };
+  if (c <= 82) return { e: '🌧', l: 'にわか雨' };
+  if (c <= 86) return { e: '❄️', l: 'にわか雪' };
+  return { e: '⛈', l: '雷雨' };
+}
+async function fetchWeather() {
+  const lats = CITIES.map(c => c.lat).join(',');
+  const lons = CITIES.map(c => c.lon).join(',');
+  const params = new URLSearchParams({
+    latitude: lats, longitude: lons,
+    current: 'temperature_2m,weather_code',
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum',
+    timezone: 'Asia/Tokyo', forecast_days: '2'
+  });
+  const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  const arr = Array.isArray(data) ? data : [data];
+  return CITIES.map((c, i) => {
+    const d = arr[i] || {};
+    const cur = d.current || {}; const daily = d.daily || {};
+    const tMax = daily.temperature_2m_max || []; const tMin = daily.temperature_2m_min || [];
+    const wCode = daily.weather_code || []; const precip = daily.precipitation_sum || [];
+    return {
+      city: c.name, emoji: c.emoji,
+      cur: typeof cur.temperature_2m === 'number' ? cur.temperature_2m : null,
+      today: { ...wmoEmoji(wCode[0]), max: tMax[0], min: tMin[0], precip: precip[0] },
+      tomorrow: { ...wmoEmoji(wCode[1]), max: tMax[1], min: tMin[1], precip: precip[1] }
+    };
+  });
+}
+function buildWeatherBlock(w) {
+  if (!Array.isArray(w) || w.length === 0) return '';
+  const fmt = v => typeof v === 'number' ? v.toFixed(0) : '?';
+  const rows = w.map(x => {
+    const t = x.today, tm = x.tomorrow;
+    const cur = typeof x.cur === 'number' ? ` (現在${fmt(x.cur)}°C)` : '';
+    return `- **${x.city}** ${x.emoji}: 今日 ${t.e}${t.l} ${fmt(t.min)}〜${fmt(t.max)}°C / 明日 ${tm.e}${tm.l} ${fmt(tm.min)}〜${fmt(tm.max)}°C${cur}`;
+  }).join('\n');
+  return `
+
+【★ 全国天気 (Open-Meteo API 自動取得) ★】
+※ 天気を web_search する必要なし(APIから取得済み)。
+${rows}
+`;
+}
+
+// ===== Markdown renderer (minimal) =====
+function renderMarkdown(text) {
+  let html = text;
+  html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  html = html.replace(/```([\s\S]*?)```/g, (m, code) => '<pre><code>' + code.trim() + '</code></pre>');
+  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  html = html.replace(/^---+$/gm, '<hr>');
+  html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  html = html.replace(/^(\d+)\.\s+(.+)$/gm, '<li data-num="$1">$2</li>');
+  html = html.replace(/^[\-\*]\s+(.+)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li[^>]*>[\s\S]+?<\/li>(?:\n<li[^>]*>[\s\S]+?<\/li>)*)/g, (m) => {
+    if (m.includes('data-num')) return '<ol>' + m.replace(/ data-num="[^"]+"/g, '') + '</ol>';
+    return '<ul>' + m + '</ul>';
+  });
+  html = html.replace(/(?:^|\n)(\|[^\n]+\|)\n(\|[\s:|\-]+\|)\n((?:\|[^\n]+\|\n?)+)/g, (m, headerLine, sep, body) => {
+    const headers = headerLine.split('|').slice(1, -1).map(s => s.trim());
+    const rows = body.trim().split('\n').map(line => line.split('|').slice(1, -1).map(s => s.trim()));
+    const th = '<thead><tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr></thead>';
+    const tb = '<tbody>' + rows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('') + '</tbody>';
+    return '\n\n<table>' + th + tb + '</table>\n\n';
+  });
+  const blocks = html.split(/\n\n+/);
+  return blocks.map(b => {
+    b = b.trim(); if (!b) return '';
+    if (/^<(h[1-6]|ul|ol|hr|pre|table)/i.test(b)) return b;
+    return '<p>' + b.replace(/\n/g, '<br>') + '</p>';
+  }).join('\n');
+}
+
+// ===== Anthropic streaming =====
+const HAIKU_MODEL = 'claude-haiku-4-5';
+const HAIKU_INPUT_COST_USD_PER_MTOK = 1;
+const HAIKU_OUTPUT_COST_USD_PER_MTOK = 5;
+const WEB_SEARCH_COST_USD = 0.01;
+
+async function streamFetch({ apiKey, prompt, maxTokens, maxSearchUses, signal, onEvent }) {
+  const body = {
+    model: HAIKU_MODEL,
+    max_tokens: maxTokens || 6000,
+    stream: true,
+    messages: [{ role: 'user', content: prompt }],
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: maxSearchUses || 8 }]
+  };
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`API error ${res.status}: ${t.slice(0, 300)}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data:')) continue;
+      const payload = trimmed.slice(5).trim();
+      if (payload === '[DONE]') return;
+      try {
+        const parsed = JSON.parse(payload);
+        onEvent(parsed);
+      } catch (e) { /* skip */ }
+    }
+  }
+}
+
+// ===== Drill-down feature =====
+function enhanceWithDrillButtons() {
+  const anchors = resultDiv.querySelectorAll('a[href^="http"]');
+  anchors.forEach(a => {
+    if (a.dataset.drillEnhanced === '1') return;
+    const text = (a.textContent || '').trim();
+    if (text.length < 6) return;
+    if (/anthropic\.com|claude\.ai|open-meteo\.com/i.test(a.href)) return;
+    a.dataset.drillEnhanced = '1';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'drill-btn';
+    btn.title = `この記事を深掘り検索: ${text}`;
+    btn.textContent = '🔍 深掘り';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      drillDownNews({ title: text, url: a.href, anchor: a });
+    });
+    a.insertAdjacentElement('afterend', btn);
+  });
+}
+
+async function drillDownNews({ title, url, anchor }) {
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey) { showStatus('⚠️ APIキーを入力してください', 'error'); return; }
+  const panel = document.createElement('div');
+  panel.className = 'drill-panel';
+  panel.innerHTML = `<div class="drill-header">
+    <strong>🔍 深掘り: ${escapeHtml(title)}</strong>
+    <button type="button" class="drill-close" title="閉じる">✕</button>
+  </div>
+  <div class="drill-body"><div class="drill-loading"><span class="spinner"></span>web_search で記事を深掘り中...</div></div>`;
+  panel.querySelector('.drill-close').addEventListener('click', () => panel.remove());
+  let host = anchor ? anchor.closest('li, p') : null;
+  if (host && host.parentNode) host.parentNode.insertBefore(panel, host.nextSibling);
+  else resultDiv.appendChild(panel);
+  panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  const body = panel.querySelector('.drill-body');
+  const prompt = `あなたはニュース・リサーチャーです。
+以下の記事 1 件を、web_search で 4〜6 回ほど深掘りし、日本語で詳細レポートを作成してください。
+
+- 元記事タイトル: ${title}
+- 元記事URL: ${url}
+
+【出力構成】(markdown)
+## 🎯 要点 (3行)
+## 📅 経緯・タイムライン
+## 👥 関係者・主要プレイヤー
+## 💡 なぜ重要か / 影響範囲
+## 🔮 今後の見通し
+## 📚 関連記事 (2〜4件、必ず [タイトル](URL) の markdown リンク形式)
+
+【ルール】
+- 全体 1,200〜2,500 文字
+- 全ての出典・関連記事は [媒体名](URL) の markdown リンクで(URL捏造禁止)
+- 不明な点は推測せず「報道なし」と書く
+- 政治的中立を保ち事実報道に徹する`;
+
+  let acc = '';
+  try {
+    const ac = new AbortController();
+    await streamFetch({
+      apiKey, prompt, maxTokens: 3500, maxSearchUses: 6, signal: ac.signal,
+      onEvent: (parsed) => {
+        if (parsed.type === 'error') throw new Error((parsed.error && parsed.error.message) || 'API error');
+        if (parsed.type === 'content_block_delta') {
+          const d = parsed.delta;
+          if (d && d.type === 'text_delta') {
+            acc += d.text;
+            body.innerHTML = renderMarkdown(acc);
+          }
+        }
+      }
+    });
+    if (acc.length === 0) {
+      body.innerHTML = '<div style="color:#dc2626">⚠️ 深掘り取得失敗(レスポンスなし)</div>';
+    } else {
+      // Allow nested drill-downs within the drill-down panel too
+      const innerAnchors = body.querySelectorAll('a[href^="http"]');
+      innerAnchors.forEach(a => {
+        if (a.dataset.drillEnhanced === '1') return;
+        const text = (a.textContent || '').trim();
+        if (text.length < 6) return;
+        a.dataset.drillEnhanced = '1';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'drill-btn';
+        btn.title = `さらに深掘り: ${text}`;
+        btn.textContent = '🔍 深掘り';
+        btn.addEventListener('click', (e) => {
+          e.preventDefault(); e.stopPropagation();
+          drillDownNews({ title: text, url: a.href, anchor: a });
+        });
+        a.insertAdjacentElement('afterend', btn);
+      });
+    }
+  } catch (e) {
+    body.innerHTML = `<div style="color:#dc2626">⚠️ 深掘り失敗: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+// ===== Main analyze =====
+async function analyze() {
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey) { showStatus('⚠️ APIキーを入力してください', 'error'); return; }
+  const additional = additionalInput.value.trim();
+  const today = new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  runBtn.disabled = true;
+  runBtn.innerHTML = '<span class="spinner"></span> ニュース収集中...';
+  hideStatus();
+  resultDiv.innerHTML = '';
+  resultDiv.classList.remove('active');
+  activityLog.innerHTML = '';
+  progressEl.classList.add('active');
+  setProgress(3);
+  setPhase('🌦 天気 + 📡 ローカル RSS 事前取得中...');
+
+  const MAX_SEARCHES = 22;
+  searchMaxEl.textContent = MAX_SEARCHES;
+  searchCountEl.textContent = '0';
+  charCountEl.textContent = '0';
+  costEstEl.textContent = '$0.000';
+
+  // Pre-fetch weather (optional, fast)
+  let weatherBlock = '';
+  try {
+    const w = await fetchWeather();
+    weatherBlock = buildWeatherBlock(w);
+    addActivity(`✅ Open-Meteo: ${w.length} 都市の天気取得`);
+  } catch (e) {
+    addActivity(`⚠️ 天気取得失敗: ${e.message}`);
+  }
+
+  // Pre-fetch local news RSS
+  let localNewsBlock = '';
+  let localItemCount = 0;
+  try {
+    addActivity('📡 Google News RSS 取得中 (野田市 / 三沢市付近)...');
+    const [noda, misawa] = await Promise.all([
+      fetchGoogleNewsRSS('千葉県 野田市 OR 流山市 OR 柏市 OR 我孫子市', 8),
+      fetchGoogleNewsRSS('青森県 三沢市 OR 八戸市 OR 十和田市 OR おいらせ町', 8)
+    ]);
+    localItemCount = noda.length + misawa.length;
+    localNewsBlock = buildLocalNewsPromptBlock([
+      { label: '🏯 千葉県野田市付近 (野田市・流山市・柏市・我孫子市)', items: noda },
+      { label: '✈️ 青森県三沢市付近 (三沢市・八戸市・十和田市・おいらせ町)', items: misawa }
+    ]);
+    addActivity(`✅ ローカル RSS: 野田 ${noda.length} 件 / 三沢 ${misawa.length} 件`);
+  } catch (e) {
+    addActivity(`⚠️ ローカル RSS 失敗: ${e.message}`);
+  }
+
+  setProgress(8);
+  setPhase('🚀 Claude Haiku 4.5 にリクエスト送信...');
+
+  const prompt = `あなたは ${today} 時点のニュース・キュレーターです。
+銘柄分析や投資推奨は行わず、★ 本日のニュースを集めて視覚的に整理する ★ ことだけが仕事です。
+${weatherBlock}${localNewsBlock}
+【★★★ 出典 URL リンク必須 ★★★】
+- すべてのニュース項目に必ず実在の出典 URL を [タイトル](URL) の markdown リンク形式で記載
+- URL を捏造禁止。Google News RSS 事前取得分の URL、または web_search の結果から取得した実 URL のみ使用
+- リンク表記が無いニュース項目は無効として扱われる(必ず1件1リンク以上)
+
+【調査方針】
+- web_search を ★ 最大 ${MAX_SEARCHES} 回 ★ まで実施(上限に達したら直ちに出力開始)
+- 政治的中立・事実報道(主観・意見は最小限)
+- 複数の地域・トピックを ★ 広く ★ カバーする
+- ★ ローカル深掘り (千葉県野田市付近 / 青森県三沢市付近) は web_search で追加で深く掘り下げてよい(各エリア 5〜8 件目標)
+${additional ? `- ユーザー追加要望: ${additional} (このテーマを重点的に)` : ''}
+
+【出力フォーマット】(Markdown / 視覚的に絵文字と表を活用)
+
+# 📅 本日のニュースダイジェスト (${today})
+
+## 🇯🇵 国内主要ニュース
+3〜5 件。各件: **タイトル** / 日付 / [媒体名](URL) / 1〜2 行サマリ。
+
+## 🏘 ローカル深掘り (千葉県野田市付近 / 青森県三沢市付近)
+★ 重点エリア ★ 各エリア 5〜8 件、できるだけ最新の地域ニュース。
+すべての項目に [タイトル](URL) markdown リンク必須。
+
+### 🏯 千葉県野田市付近 (野田市・流山市・柏市・我孫子市・松戸市・川間・関宿)
+- **野田市** [ニュースタイトル](実URL)
+  - 1〜2 行サマリ + (出典: 媒体名 / 日付)
+- (5〜8 件)
+
+### ✈️ 青森県三沢市付近 (三沢市・八戸市・十和田市・おいらせ町・東北町)
+- **三沢市** [ニュースタイトル](実URL)
+  - 1〜2 行サマリ + (出典: 媒体名 / 日付)
+- (5〜8 件)
+
+## 🏘 その他ローカル・地方ニュース
+2〜3 件。北海道・東北・関東・中部・関西・中国・四国・九州沖縄 から多様にカバー。
+- **地域名** [タイトル](URL) - 1〜2 行で内容
+
+## 🌍 世界ニュース
+3〜5 件。米国・欧州・中国・アジア・中東等。各件 [媒体名](URL) を併記。
+
+## ☀️ 天気・気象
+- **全国概況**: 1〜2 行
+- **主要地域別**: 表形式 (★ 青森県・三沢・野田 を含める)
+
+## 💼 経済・金融市場
+3〜5 件。株価指数・為替・金利・コモディティ等。
+
+## 🎯 今日のキーポイント (3 つ)
+- ①: [一番大事な動き]
+- ②: [二番目]
+- ③: [三番目]
+
+【★ 絶対ルール ★】
+- 銘柄推奨・投資判断は ★禁止★(このモードはニュース収集のみ)
+- 各ニュースに必ず日付と [媒体名](URL) markdown リンクを併記
+- 政治的・宗教的バイアスを避け事実報道
+- ニュースが少ない分野は「該当ニュースなし」と書く
+- 全体 2,500〜4,500 文字
+- 視覚的に分かりやすく(絵文字・表・箇条書き)
+- 検索が終わったら直ちに出力開始(熟考しない)
+- ★ URL を一切捏造禁止(必ず実 URL を使う)`;
+
+  let inputTokens = 0, outputTokens = 0, searchCount = 0;
+  let acc = '';
+  let toolInput = '', toolIndex = null;
+
+  try {
+    const ac = new AbortController();
+    await streamFetch({
+      apiKey, prompt, maxTokens: 6500, maxSearchUses: MAX_SEARCHES, signal: ac.signal,
+      onEvent: (parsed) => {
+        if (parsed.type === 'error') throw new Error((parsed.error && parsed.error.message) || JSON.stringify(parsed.error));
+        if (parsed.type === 'message_start' && parsed.message && parsed.message.usage) {
+          inputTokens = parsed.message.usage.input_tokens || 0;
+          addActivity(`📨 応答開始 (入力 ${inputTokens.toLocaleString()}tk)`);
+        }
+        if (parsed.type === 'content_block_start') {
+          const block = parsed.content_block;
+          if (block && block.type === 'server_tool_use' && block.name === 'web_search') {
+            searchCount++; toolInput = ''; toolIndex = parsed.index;
+            searchCountEl.textContent = searchCount;
+            setProgress(Math.min(50, 10 + searchCount * Math.floor(40 / MAX_SEARCHES)));
+            setPhase(`🔍 検索 ${searchCount}/${MAX_SEARCHES}`);
+            addActivity(`🔍 検索 #${searchCount}`);
+          } else if (block && block.type === 'text') {
+            setPhase('✍️ ダイジェスト生成中');
+          }
+        }
+        if (parsed.type === 'content_block_delta') {
+          const delta = parsed.delta;
+          if (delta && delta.type === 'text_delta') {
+            acc += delta.text;
+            resultDiv.innerHTML = renderMarkdown(acc);
+            resultDiv.classList.add('active');
+            charCountEl.textContent = acc.length.toLocaleString();
+            setProgress(Math.min(95, 50 + Math.floor(acc.length / 70)));
+            const estOut = Math.max(outputTokens, Math.ceil(acc.length / 2));
+            const tokenCost = (inputTokens * HAIKU_INPUT_COST_USD_PER_MTOK + estOut * HAIKU_OUTPUT_COST_USD_PER_MTOK) / 1000000;
+            const searchCost = searchCount * WEB_SEARCH_COST_USD;
+            costEstEl.textContent = '$' + (tokenCost + searchCost).toFixed(3);
+            enhanceWithDrillButtons();
+          }
+          if (delta && delta.type === 'input_json_delta' && parsed.index === toolIndex) {
+            toolInput += delta.partial_json || '';
+          }
+        }
+        if (parsed.type === 'content_block_stop' && parsed.index === toolIndex && toolInput) {
+          try {
+            const inp = JSON.parse(toolInput);
+            if (inp.query) {
+              addActivity(`🔎 クエリ: "${inp.query}"`);
+              setPhase(`🔍 検索 ${searchCount}/${MAX_SEARCHES}: "${inp.query}"`);
+            }
+          } catch {}
+          toolIndex = null; toolInput = '';
+        }
+        if (parsed.type === 'message_delta' && parsed.usage) {
+          outputTokens = parsed.usage.output_tokens || outputTokens;
+        }
+      }
+    });
+
+    setProgress(100);
+    setPhase('✅ 完了');
+    addActivity(`✅ 完了: ${acc.length.toLocaleString()} 文字 / 検索 ${searchCount} 回`);
+    enhanceWithDrillButtons();
+
+    // Cost summary
+    const estOut = Math.max(outputTokens, Math.ceil(acc.length / 2));
+    const tokenCost = (inputTokens * HAIKU_INPUT_COST_USD_PER_MTOK + estOut * HAIKU_OUTPUT_COST_USD_PER_MTOK) / 1000000;
+    const searchCost = searchCount * WEB_SEARCH_COST_USD;
+    const total = tokenCost + searchCost;
+    const cs = document.createElement('div');
+    cs.className = 'cost-summary';
+    cs.innerHTML = `💵 コスト概算: <strong>$${total.toFixed(4)}</strong> (≈ ¥${Math.round(total * 155).toLocaleString()}, 1USD=¥155 換算)
+      <br>📊 入力 ${inputTokens.toLocaleString()}tk + 出力 ${estOut.toLocaleString()}tk + 検索 ${searchCount} 回
+      <br>📡 事前取得: Google News RSS ${localItemCount} 件 (URL捏造防止)
+      <br>🔍 各ニュースの右にある「深掘り」ボタンを押すと、その記事を web_search で 4〜6 回深掘りした詳細レポートが出ます。`;
+    resultDiv.appendChild(cs);
+
+  } catch (e) {
+    showStatus('❌ エラー: ' + e.message, 'error');
+    addActivity(`❌ エラー: ${e.message}`);
+  } finally {
+    runBtn.disabled = false;
+    runBtn.innerHTML = '📰 本日のニュースを再収集';
+  }
+}
+
+runBtn.addEventListener('click', analyze);
+</script>
+</body>
+</html>
