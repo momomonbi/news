@@ -885,25 +885,38 @@ async function geocodeRegion(name) {
   if (!name) return null;
   const cache = loadGeocodeCache();
   if (cache[name]) return cache[name];
-  try {
-    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=ja&format=json`;
-    const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const r = data && Array.isArray(data.results) && data.results[0];
-    if (!r) return null;
-    const entry = { name, lat: r.latitude, lon: r.longitude };
-    cache[name] = entry;
-    saveGeocodeCache(cache);
-    return entry;
-  } catch { return null; }
+  const candidates = [name];
+  const stripped = name.replace(/[市町村区]$/, '').replace(/[都道府県]$/, '').trim();
+  if (stripped && stripped !== name) candidates.push(stripped);
+  const firstWord = name.split(/[\s　・/,]/)[0].trim();
+  if (firstWord && !candidates.includes(firstWord)) candidates.push(firstWord);
+  for (const q of candidates) {
+    try {
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=ja&format=json`;
+      const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const r = data && Array.isArray(data.results) && data.results[0];
+      if (!r) continue;
+      const entry = { name, lat: r.latitude, lon: r.longitude, resolved: q };
+      cache[name] = entry;
+      saveGeocodeCache(cache);
+      return entry;
+    } catch { /* try next */ }
+  }
+  return null;
 }
-async function buildCityList(regions) {
+async function buildCityList(regions, onMiss) {
   const regionCities = [];
   for (const r of regions) {
-    if (!r.name) continue;
-    const g = await geocodeRegion(r.name);
-    if (g) regionCities.push({ name: r.name, emoji: '📍', lat: g.lat, lon: g.lon });
+    const lookupName = r.name || (r.query ? r.query.split(/[\s　・/,]/)[0] : '');
+    if (!lookupName) continue;
+    const g = await geocodeRegion(lookupName);
+    if (g) {
+      regionCities.push({ name: r.name || lookupName, emoji: '📍', lat: g.lat, lon: g.lon });
+    } else if (typeof onMiss === 'function') {
+      onMiss(lookupName);
+    }
   }
   return [...regionCities, ...BASE_CITIES];
 }
@@ -1289,11 +1302,21 @@ async function analyze() {
 
   // Pre-fetch weather (optional, fast)
   let weatherBlock = '';
+  let weatherCities = [];
   try {
-    const cities = await buildCityList(regions);
-    const w = await fetchWeather(cities);
+    const missed = [];
+    weatherCities = await buildCityList(regions, n => missed.push(n));
+    const w = await fetchWeather(weatherCities);
     weatherBlock = buildWeatherBlock(w);
-    addActivity(`✅ Open-Meteo: ${w.length} 都市の天気取得`);
+    const regionCityNames = weatherCities.filter(c => c.emoji === '📍').map(c => c.name);
+    if (regionCityNames.length > 0) {
+      addActivity(`✅ Open-Meteo: ${w.length} 都市 (深掘り地域: ${regionCityNames.join(' / ')})`);
+    } else {
+      addActivity(`✅ Open-Meteo: ${w.length} 都市の天気取得`);
+    }
+    if (missed.length > 0) {
+      addActivity(`⚠️ ジオコーディング失敗 (天気に含められず): ${missed.join(' / ')}`);
+    }
   } catch (e) {
     addActivity(`⚠️ 天気取得失敗: ${e.message}`);
   }
@@ -1341,9 +1364,11 @@ async function analyze() {
 
 ${regionSections}`
     : '';
-  const weatherRegionHint = regions.length > 0
-    ? `★ ${regions.map(r => r.name || r.query).join('・')} を含めて全都市を表示`
-    : '★ BASE_CITIES の都市を表示';
+  const weatherCityNames = weatherCities.map(c => c.name);
+  const regionWeatherCityNames = weatherCities.filter(c => c.emoji === '📍').map(c => c.name);
+  const weatherRegionHint = regionWeatherCityNames.length > 0
+    ? `★ 深掘り地域 (${regionWeatherCityNames.join('・')}) を ★ 必ず ★ 表の先頭に含めて、全都市 (${weatherCityNames.join('・')}) を漏れなく表示`
+    : (weatherCityNames.length > 0 ? `★ 全都市 (${weatherCityNames.join('・')}) を漏れなく表示` : '★ 取得済みの都市を表示');
 
   const prompt = `あなたは ${today} 時点のニュース・キュレーターです。
 銘柄分析や投資推奨は行わず、★ 本日のニュースを集めて視覚的に整理する ★ ことだけが仕事です。
