@@ -6,22 +6,22 @@
 <title>📰 ニュース収集 (野田市 / 三沢市 深掘り) | Powered by Claude</title>
 <style>
 :root {
-  --bg: #0b0f1a;
-  --bg-2: #111827;
-  --card: #161c2c;
-  --card-2: #1d2438;
-  --text: #f3f4f6;
-  --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
-  --border: #2a3349;
-  --border-strong: #3b4663;
-  --primary: #818cf8;
-  --primary-2: #c084fc;
-  --primary-soft: rgba(129,140,248,0.16);
-  --primary-line: rgba(129,140,248,0.35);
-  --success: #4ade80;
-  --warn: #fbbf24;
-  --error: #f87171;
+  --bg: #000000;
+  --bg-2: #0a0a0a;
+  --card: #161a24;
+  --card-2: #1f2433;
+  --text: #ffffff;
+  --text-secondary: #e8eaf0;
+  --text-muted: #b8c0d0;
+  --border: #2d3447;
+  --border-strong: #424b64;
+  --primary: #a5b4fc;
+  --primary-2: #d8b4fe;
+  --primary-soft: rgba(165,180,252,0.18);
+  --primary-line: rgba(165,180,252,0.45);
+  --success: #6ee7b7;
+  --warn: #fcd34d;
+  --error: #fca5a5;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -30,13 +30,15 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
   background: var(--bg);
   background-image:
-    radial-gradient(at 20% 0%, rgba(129,140,248,0.12) 0px, transparent 50%),
-    radial-gradient(at 80% 0%, rgba(192,132,252,0.10) 0px, transparent 50%);
+    radial-gradient(at 20% 0%, rgba(165,180,252,0.09) 0px, transparent 55%),
+    radial-gradient(at 80% 0%, rgba(216,180,254,0.07) 0px, transparent 55%);
   background-attachment: fixed;
   color: var(--text);
-  line-height: 1.65;
+  line-height: 1.7;
   font-size: 14px;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 .container { max-width: 920px; margin: 0 auto; padding: 24px 18px 80px; }
 header { text-align: center; margin-bottom: 22px; }
@@ -56,7 +58,7 @@ header .version { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
   border-radius: 14px;
   padding: 16px 18px;
   margin-bottom: 16px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 6px 20px rgba(0,0,0,0.5);
 }
 .card-title {
   display: flex; align-items: center; gap: 8px;
@@ -134,9 +136,11 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 .primary-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(129,140,248,0.55); }
 .notice {
-  font-size: 11.5px; color: var(--text-muted);
+  font-size: 11.5px; color: var(--text-secondary);
   margin-top: 8px;
 }
+.notice strong { color: var(--text); }
+.notice a { color: var(--primary); }
 .status {
   margin-top: 10px;
   padding: 10px 12px;
@@ -165,9 +169,9 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 .progress-stats {
   display: flex; gap: 14px; flex-wrap: wrap;
-  font-size: 11.5px; color: var(--text-muted);
+  font-size: 11.5px; color: var(--text-secondary);
 }
-.progress-stats strong { color: var(--text-secondary); }
+.progress-stats strong { color: var(--text); }
 .spinner {
   display: inline-block;
   width: 12px; height: 12px;
@@ -568,7 +572,7 @@ footer a { color: var(--text-muted); }
 
 <script>
 'use strict';
-const APP_VERSION = 'v1.3.0';
+const APP_VERSION = 'v1.4.0';
 document.getElementById('versionTag').textContent = APP_VERSION;
 
 // ===== UI helpers =====
@@ -796,7 +800,7 @@ async function fetchWeather() {
     latitude: lats, longitude: lons,
     current: 'temperature_2m,weather_code',
     daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum',
-    timezone: 'Asia/Tokyo', forecast_days: '2'
+    timezone: 'Asia/Tokyo', forecast_days: '7'
   });
   const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -807,27 +811,42 @@ async function fetchWeather() {
     const cur = d.current || {}; const daily = d.daily || {};
     const tMax = daily.temperature_2m_max || []; const tMin = daily.temperature_2m_min || [];
     const wCode = daily.weather_code || []; const precip = daily.precipitation_sum || [];
+    const time = daily.time || [];
+    const days = time.map((t, idx) => ({
+      date: t,
+      ...wmoEmoji(wCode[idx]),
+      max: tMax[idx], min: tMin[idx], precip: precip[idx]
+    }));
     return {
       city: c.name, emoji: c.emoji,
       cur: typeof cur.temperature_2m === 'number' ? cur.temperature_2m : null,
-      today: { ...wmoEmoji(wCode[0]), max: tMax[0], min: tMin[0], precip: precip[0] },
-      tomorrow: { ...wmoEmoji(wCode[1]), max: tMax[1], min: tMin[1], precip: precip[1] }
+      days: days
     };
   });
 }
 function buildWeatherBlock(w) {
   if (!Array.isArray(w) || w.length === 0) return '';
   const fmt = v => typeof v === 'number' ? v.toFixed(0) : '?';
-  const rows = w.map(x => {
-    const t = x.today, tm = x.tomorrow;
+  const fmtDate = ds => {
+    const d = new Date(ds);
+    const m = d.getMonth() + 1, day = d.getDate();
+    const dow = ['日','月','火','水','木','金','土'][d.getDay()];
+    return `${m}/${day}(${dow})`;
+  };
+  const cityBlocks = w.map(x => {
     const cur = typeof x.cur === 'number' ? ` (現在${fmt(x.cur)}°C)` : '';
-    return `- **${x.city}** ${x.emoji}: 今日 ${t.e}${t.l} ${fmt(t.min)}〜${fmt(t.max)}°C / 明日 ${tm.e}${tm.l} ${fmt(tm.min)}〜${fmt(tm.max)}°C${cur}`;
+    const days = (x.days || []).slice(0, 7);
+    const lines = days.map(d => {
+      const prc = (typeof d.precip === 'number' && d.precip > 0) ? ` 降水${fmt(d.precip)}mm` : '';
+      return `  ${fmtDate(d.date)}: ${d.e} ${d.l} ${fmt(d.min)}〜${fmt(d.max)}°C${prc}`;
+    }).join('\n');
+    return `■ ${x.city} ${x.emoji}${cur}\n${lines}`;
   }).join('\n');
   return `
 
-【★ 全国天気 (Open-Meteo API 自動取得) ★】
-※ 天気を web_search する必要なし(APIから取得済み)。
-${rows}
+【★ 全国7日間天気予報 (Open-Meteo API 自動取得済み) ★】
+※ web_search 不要。下記 7日間データをそのまま週間予報として出力で使用すること。
+${cityBlocks}
 `;
 }
 
@@ -1208,9 +1227,14 @@ ${additional ? `- ユーザー追加要望: ${additional} (このテーマを重
 ## 🌍 世界ニュース
 3〜5 件。米国・欧州・中国・アジア・中東等。各件 [媒体名](URL) を併記。
 
-## ☀️ 天気・気象
-- **全国概況**: 1〜2 行
-- **主要地域別**: 表形式 (★ 青森県・三沢・野田 を含める)
+## ☀️ 天気・気象 (★ 週間予報 7日間 がデフォルト ★)
+- **今週の概況**: 2〜3 行で今週の天気傾向 (晴続き / 雨多い / 寒暖差 / 雪 等)
+- **7日間予報 (全都市)**: ★必ず★ 週間予報を表形式で出力すること
+  - 上の【全国7日間天気予報】データをそのまま整形して markdown 表に
+  - 列: 都市 / 日付1 / 日付2 / 日付3 / 日付4 / 日付5 / 日付6 / 日付7
+  - 各セル: 絵文字 + 最低〜最高°C (降水があれば併記)
+  - ★ 青森・三沢・野田 を含めて全都市を表示
+- **本日の特記**: 注意報・警報があれば 1〜2 行 (web_search で取得可)
 
 ## 💼 経済・金融市場
 3〜5 件。株価指数・為替・金利・コモディティ等。
