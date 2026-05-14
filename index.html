@@ -527,7 +527,7 @@ footer a { color: var(--text-muted); }
     </div>
     <div class="row" style="margin-top:8px; gap:6px;">
       <button type="button" class="icon-btn" id="saveRegions" title="地域を保存">💾 地域を保存</button>
-      <button type="button" class="icon-btn" id="resetRegions" title="デフォルト(野田/三沢)に戻す">↺ デフォルト</button>
+      <button type="button" class="icon-btn" id="resetRegions" title="デフォルト(空白)に戻す">↺ デフォルト</button>
       <button type="button" class="icon-btn" id="clearRegions" title="全クリア">🗑 全クリア</button>
     </div>
     <div class="notice">
@@ -632,8 +632,8 @@ const REGIONS_STORAGE_KEY = 'news_standalone_regions_v1';
 const GEOCODE_CACHE_KEY = 'news_standalone_geocode_cache_v1';
 
 const DEFAULT_REGIONS = [
-  { name: '野田市', query: '千葉県 野田市 OR 流山市 OR 柏市 OR 我孫子市' },
-  { name: '三沢市', query: '青森県 三沢市 OR 八戸市 OR 十和田市 OR おいらせ町' },
+  { name: '', query: '' },
+  { name: '', query: '' },
   { name: '', query: '' }
 ];
 
@@ -804,7 +804,7 @@ $('saveRegions').addEventListener('click', () => {
 $('resetRegions').addEventListener('click', () => {
   writeRegionsToUI(DEFAULT_REGIONS);
   localStorage.setItem(REGIONS_STORAGE_KEY, JSON.stringify(DEFAULT_REGIONS));
-  showStatus('↺ デフォルト (野田市 / 三沢市) に戻しました', 'info');
+  showStatus('↺ デフォルト (空白) に戻しました', 'info');
 });
 $('clearRegions').addEventListener('click', () => {
   if (!confirm('指定地域をすべてクリアしますか？')) return;
