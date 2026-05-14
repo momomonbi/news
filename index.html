@@ -68,6 +68,13 @@ header .version { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
   cursor: pointer;
   user-select: none;
 }
+.card-title-with-action { gap: 6px; }
+.card-title-with-action .card-title-text { flex: 1; }
+.icon-btn-sm {
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
 .card-title-collapsible .card-title-text { flex: 1; }
 .card-toggle-icon {
   font-size: 14px; color: var(--text-muted);
@@ -495,7 +502,10 @@ footer a { color: var(--text-muted); }
   </div>
 
   <div class="card">
-    <div class="card-title">⚙️ 詳細設定</div>
+    <div class="card-title card-title-with-action">
+      <span class="card-title-text">⚙️ 詳細設定</span>
+      <button type="button" class="icon-btn icon-btn-sm" id="resetSliders" title="スライダーをデフォルトに戻す">↻ リセット</button>
+    </div>
     <div class="slider-row">
       <label for="tokenSlider"><span>📝 出力トークン上限</span><strong id="tokenValue">6500</strong></label>
       <input type="range" id="tokenSlider" min="2000" max="12000" step="500" value="6500">
@@ -659,6 +669,8 @@ $('clearKey').addEventListener('click', (e) => {
 // ===== Sliders (token & search levels) + live cost estimate =====
 const costEstValue = $('costEstValue');
 const costEstDetail = $('costEstDetail');
+const DEFAULT_TOKEN_LEVEL = 6500;
+const DEFAULT_SEARCH_LEVEL = 22;
 
 function updateCostEstimate() {
   const tokens = parseInt(tokenSlider.value, 10) || 6500;
@@ -687,6 +699,17 @@ searchSlider.addEventListener('input', () => {
   searchValue.textContent = searchSlider.value;
   localStorage.setItem(SEARCH_STORAGE_KEY, searchSlider.value);
   updateCostEstimate();
+});
+
+$('resetSliders').addEventListener('click', () => {
+  tokenSlider.value = DEFAULT_TOKEN_LEVEL;
+  tokenValue.textContent = DEFAULT_TOKEN_LEVEL;
+  searchSlider.value = DEFAULT_SEARCH_LEVEL;
+  searchValue.textContent = DEFAULT_SEARCH_LEVEL;
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  localStorage.removeItem(SEARCH_STORAGE_KEY);
+  updateCostEstimate();
+  showStatus(`↻ スライダーをデフォルトに戻しました (出力 ${DEFAULT_TOKEN_LEVEL}tk / 検索 ${DEFAULT_SEARCH_LEVEL} 回)`, 'info');
 });
 
 updateCostEstimate();
