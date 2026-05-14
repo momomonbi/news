@@ -382,6 +382,27 @@ input[type="range"]::-moz-range-thumb {
   border-color: rgba(74,222,128,0.45);
 }
 .merge-banner.done strong { color: var(--success); }
+.cost-estimate {
+  margin-top: 12px;
+  padding: 9px 12px;
+  background: linear-gradient(135deg, rgba(129,140,248,0.1), rgba(192,132,252,0.1));
+  border: 1px solid var(--primary-line);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.cost-estimate strong {
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+.cost-est-detail {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
 @media (max-width: 600px) {
   body { font-size: 13px; line-height: 1.6; }
   .container { padding: 14px 10px 60px; }
@@ -483,8 +504,12 @@ footer a { color: var(--text-muted); }
       <label for="searchSlider"><span>🔍 web_search 回数上限</span><strong id="searchValue">22</strong></label>
       <input type="range" id="searchSlider" min="1" max="30" step="1" value="22">
     </div>
+    <div class="cost-estimate" id="costEstimate">
+      💵 1 回あたり上限コスト: <strong id="costEstValue">$0.000</strong>
+      <span class="cost-est-detail" id="costEstDetail"></span>
+    </div>
     <div class="notice">
-      💡 値を上げると詳細・広範囲になりますが、コストと時間も増えます。
+      💡 値を上げると詳細・広範囲になりますが、コストと時間も増えます。同日2回目以降は統合フェーズで <strong>+ 約 $0.05〜$0.10</strong> 追加。
     </div>
   </div>
 
@@ -533,7 +558,7 @@ footer a { color: var(--text-muted); }
 
 <script>
 'use strict';
-const APP_VERSION = 'v1.2.0';
+const APP_VERSION = 'v1.3.0';
 document.getElementById('versionTag').textContent = APP_VERSION;
 
 // ===== UI helpers =====
@@ -561,6 +586,13 @@ const TOKEN_STORAGE_KEY = 'anthropic_news_token_level';
 const SEARCH_STORAGE_KEY = 'anthropic_news_search_level';
 const ARCHIVE_KEY_PREFIX = 'news_archive_';
 const ARCHIVE_KEEP = 60;
+
+const HAIKU_MODEL = 'claude-haiku-4-5';
+const HAIKU_INPUT_COST_USD_PER_MTOK = 1;
+const HAIKU_OUTPUT_COST_USD_PER_MTOK = 5;
+const WEB_SEARCH_COST_USD = 0.01;
+const EST_BASE_INPUT_TOKENS = 3500;
+const USD_TO_JPY = 155;
 
 let currentAbortController = null;
 
@@ -624,13 +656,28 @@ $('clearKey').addEventListener('click', (e) => {
   setApiCollapsed(false);
 });
 
-// ===== Sliders (token & search levels) =====
+// ===== Sliders (token & search levels) + live cost estimate =====
+const costEstValue = $('costEstValue');
+const costEstDetail = $('costEstDetail');
+
+function updateCostEstimate() {
+  const tokens = parseInt(tokenSlider.value, 10) || 6500;
+  const searches = parseInt(searchSlider.value, 10) || 22;
+  const inputCost = EST_BASE_INPUT_TOKENS * HAIKU_INPUT_COST_USD_PER_MTOK / 1000000;
+  const maxOutputCost = tokens * HAIKU_OUTPUT_COST_USD_PER_MTOK / 1000000;
+  const maxSearchCost = searches * WEB_SEARCH_COST_USD;
+  const maxTotal = inputCost + maxOutputCost + maxSearchCost;
+  costEstValue.textContent = '$' + maxTotal.toFixed(3) + ` (≈¥${Math.round(maxTotal * USD_TO_JPY).toLocaleString()})`;
+  costEstDetail.textContent = `入力≈${EST_BASE_INPUT_TOKENS.toLocaleString()}tk · 出力≤${tokens.toLocaleString()}tk ($${maxOutputCost.toFixed(3)}) · 検索≤${searches}回 ($${maxSearchCost.toFixed(2)})`;
+}
+
 const savedTokenLevel = localStorage.getItem(TOKEN_STORAGE_KEY);
 if (savedTokenLevel) tokenSlider.value = savedTokenLevel;
 tokenValue.textContent = tokenSlider.value;
 tokenSlider.addEventListener('input', () => {
   tokenValue.textContent = tokenSlider.value;
   localStorage.setItem(TOKEN_STORAGE_KEY, tokenSlider.value);
+  updateCostEstimate();
 });
 
 const savedSearchLevel = localStorage.getItem(SEARCH_STORAGE_KEY);
@@ -639,7 +686,10 @@ searchValue.textContent = searchSlider.value;
 searchSlider.addEventListener('input', () => {
   searchValue.textContent = searchSlider.value;
   localStorage.setItem(SEARCH_STORAGE_KEY, searchSlider.value);
+  updateCostEstimate();
 });
+
+updateCostEstimate();
 
 // ===== Google News RSS fetcher =====
 async function fetchGoogleNewsRSS(query, maxItems) {
@@ -794,11 +844,6 @@ function renderMarkdown(text) {
 }
 
 // ===== Anthropic streaming =====
-const HAIKU_MODEL = 'claude-haiku-4-5';
-const HAIKU_INPUT_COST_USD_PER_MTOK = 1;
-const HAIKU_OUTPUT_COST_USD_PER_MTOK = 5;
-const WEB_SEARCH_COST_USD = 0.01;
-
 async function streamFetch({ apiKey, prompt, maxTokens, maxSearchUses, signal, onEvent }) {
   const body = {
     model: HAIKU_MODEL,
