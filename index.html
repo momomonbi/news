@@ -366,6 +366,22 @@ input[type="range"]::-moz-range-thumb {
   font-family: inherit;
 }
 .archive-banner-actions button:hover { background: var(--border); color: var(--text); }
+.merge-banner {
+  margin: -4px 0 12px;
+  padding: 9px 12px;
+  background: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(192,132,252,0.18));
+  border: 1px solid rgba(251,191,36,0.45);
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.merge-banner strong { color: var(--warn); }
+.merge-banner.done {
+  background: linear-gradient(135deg, rgba(74,222,128,0.18), rgba(129,140,248,0.18));
+  border-color: rgba(74,222,128,0.45);
+}
+.merge-banner.done strong { color: var(--success); }
 @media (max-width: 600px) {
   body { font-size: 13px; line-height: 1.6; }
   .container { padding: 14px 10px 60px; }
@@ -517,7 +533,7 @@ footer a { color: var(--text-muted); }
 
 <script>
 'use strict';
-const APP_VERSION = 'v1.1.0';
+const APP_VERSION = 'v1.2.0';
 document.getElementById('versionTag').textContent = APP_VERSION;
 
 // ===== UI helpers =====
@@ -828,6 +844,83 @@ async function streamFetch({ apiKey, prompt, maxTokens, maxSearchUses, signal, o
   }
 }
 
+// ===== Same-day merge feature =====
+async function mergeArchive({ apiKey, todayLabel, todayKey, previousMarkdown, newMarkdown, maxTokens, signal, callbacks }) {
+  const prompt = `あなたはニュース・キュレーターです。本日 (${todayLabel}) の同日に2回以上ニュース収集が行われました。【前回版】と【新版】を比較し、最終的に1つに統合してください。
+
+【★ 統合の絶対ルール ★】
+- 重複・類似する記事は ★必ず1件に統合★ (より新しい・詳細・出典が明確な方を採用)
+- 表現が違うが同じ事象を指す記事 → 内容に齟齬がある場合のみ web_search で事実確認 (最大4回)
+- 片方にしかない有益情報も漏らさず採用
+- セクション構成 (国内/ローカル深掘り/世界/天気/経済/キーポイント等) は新版を基本
+- URL 捏造禁止。前回版・新版にある URL、または web_search で見つけた実 URL のみ
+- markdown リンク形式 [タイトル](URL) を維持
+
+【出力】
+- 統合後の markdown 本文のみ (「以下が統合版です」等の前置きやメタコメント禁止)
+- 全体 2,500〜4,500 字
+- 見出し階層は新版と同じ構成
+
+【★ 口調・トーン ★】
+- ★ 友達同士の会話のような、カジュアルで親しみやすい口調を維持 ★ (硬い報道調・敬語 NG)
+- 「〜だよ」「〜らしい」「〜なんだって」「〜だね」「〜じゃん」など砕けた表現を自然に使う
+- ただし事実は正確に。日付・固有名詞・数字は正確に伝える
+- 前回版・新版どちらかが硬い場合でも、統合後はカジュアルに統一
+
+────────────────────
+【前回版】(同日の先行収集分)
+────────────────────
+${previousMarkdown}
+
+────────────────────
+【新版】(今回の収集分)
+────────────────────
+${newMarkdown}`;
+
+  let merged = '';
+  let mIn = 0, mOut = 0, mSearch = 0;
+  let toolInput = '', toolIndex = null;
+
+  await streamFetch({
+    apiKey, prompt, maxTokens: maxTokens || 6500, maxSearchUses: 4, signal,
+    onEvent: (parsed) => {
+      if (parsed.type === 'error') throw new Error((parsed.error && parsed.error.message) || 'merge API error');
+      if (parsed.type === 'message_start' && parsed.message && parsed.message.usage) {
+        mIn = parsed.message.usage.input_tokens || 0;
+        if (callbacks.onStart) callbacks.onStart(mIn);
+      }
+      if (parsed.type === 'content_block_start') {
+        const block = parsed.content_block;
+        if (block && block.type === 'server_tool_use' && block.name === 'web_search') {
+          mSearch++; toolInput = ''; toolIndex = parsed.index;
+          if (callbacks.onSearch) callbacks.onSearch(mSearch);
+        }
+      }
+      if (parsed.type === 'content_block_delta') {
+        const d = parsed.delta;
+        if (d && d.type === 'text_delta') {
+          merged += d.text;
+          if (callbacks.onText) callbacks.onText(merged);
+        }
+        if (d && d.type === 'input_json_delta' && parsed.index === toolIndex) {
+          toolInput += d.partial_json || '';
+        }
+      }
+      if (parsed.type === 'content_block_stop' && parsed.index === toolIndex && toolInput) {
+        try {
+          const inp = JSON.parse(toolInput);
+          if (inp.query && callbacks.onSearchQuery) callbacks.onSearchQuery(mSearch, inp.query);
+        } catch {}
+        toolIndex = null; toolInput = '';
+      }
+      if (parsed.type === 'message_delta' && parsed.usage) {
+        mOut = parsed.usage.output_tokens || mOut;
+      }
+    }
+  });
+  return { merged, inputTokens: mIn, outputTokens: mOut, searchCount: mSearch };
+}
+
 // ===== Drill-down feature =====
 function enhanceWithDrillButtons() {
   const anchors = resultDiv.querySelectorAll('a[href^="http"]');
@@ -897,7 +990,13 @@ async function drillDownNews({ title, url, anchor }) {
 - 全体 1,200〜2,500 文字
 - 全ての出典・関連記事は [媒体名](URL) の markdown リンクで(URL捏造禁止、web_search の結果から実 URL のみ)
 - 見つからない項目は「公的報道なし」または「情報限定的」と簡潔に明記し、ユーザーに尋ねない
-- 政治的中立を保ち事実報道に徹する`;
+- 政治的中立を保ち事実報道に徹する
+
+【★ 口調・トーン ★】
+- ★ 友達に「これ気になってさ」と話しかけるようなカジュアル口調 ★ (硬い報道調・敬語 NG)
+- 「〜だよ」「〜なんだって」「〜らしい」「〜だね」「〜みたい」「〜じゃん」を自然に使う
+- 「これ実はね」「ちょっと面白いのが」など友達トーク風の繋ぎも OK
+- ただし事実は正確に、日付・固有名詞・数字は正確に伝える`;
 
   let acc = '';
   try {
@@ -1061,11 +1160,20 @@ ${additional ? `- ユーザー追加要望: ${additional} (このテーマを重
 - 全体 2,500〜4,500 文字
 - 視覚的に分かりやすく(絵文字・表・箇条書き)
 - 検索が終わったら直ちに出力開始(熟考しない)
-- ★ URL を一切捏造禁止(必ず実 URL を使う)`;
+- ★ URL を一切捏造禁止(必ず実 URL を使う)
+
+【★ 口調・トーン (重要) ★】
+- ★ 友達同士の会話のような、カジュアルで親しみやすい口調で書く ★ (硬い報道調・敬語は NG)
+- 「〜だよ」「〜らしい」「〜なんだって」「〜だね」「〜じゃん」「〜みたい」など砕けた表現を自然に使う
+- 「聞いて〜」「ちょっと注目」「これヤバいかも」など友達トーク風の繋ぎ言葉も OK
+- ただし★事実は正確に★。煽り・誇張・憶測は避ける。日付・固有名詞・数字は正確に伝える
+- 「ちなみに」「あと」「まあ」など接続詞を会話っぽく使ってよい
+- 絵文字や「！」を自然に散りばめて OK (でも乱用しすぎない)`;
 
   let inputTokens = 0, outputTokens = 0, searchCount = 0;
   let acc = '';
   let toolInput = '', toolIndex = null;
+  let mergedThisRun = false;
 
   try {
     const ac = new AbortController();
@@ -1124,6 +1232,71 @@ ${additional ? `- ユーザー追加要望: ${additional} (このテーマを重
       }
     });
 
+    // === Same-day merge: if today already has an archive, merge prev + new ===
+    if (acc.length > 100) {
+      const todayKey = dateToKey(new Date());
+      const existing = loadArchive(todayKey);
+      if (existing && existing.markdown && existing.markdown.length > 100) {
+        setPhase('🔀 前回アーカイブと統合中...');
+        setProgress(72);
+        addActivity(`🔀 同日アーカイブ検出 (${todayKey})、統合プロセス開始`);
+
+        const mergeBanner = document.createElement('div');
+        mergeBanner.className = 'merge-banner';
+        mergeBanner.innerHTML = `🔀 <strong>同日 (${todayKey}) の前回アーカイブと統合中...</strong> 似た記事を 1 件にまとめ、必要なら web_search で再確認します。`;
+
+        try {
+          const result = await mergeArchive({
+            apiKey, todayLabel: today, todayKey,
+            previousMarkdown: existing.markdown, newMarkdown: acc,
+            maxTokens: MAX_TOKENS, signal: ac.signal,
+            callbacks: {
+              onStart: (tk) => addActivity(`📨 統合プロンプト送信 (入力 ${tk.toLocaleString()}tk)`),
+              onSearch: (n) => {
+                setPhase(`🔀 統合検索 ${n}/4`);
+                addActivity(`🔍 統合中検索 #${n}`);
+              },
+              onSearchQuery: (n, q) => {
+                addActivity(`🔎 統合クエリ: "${q}"`);
+                setPhase(`🔀 統合検索 ${n}/4: "${q}"`);
+              },
+              onText: (md) => {
+                resultDiv.innerHTML = '';
+                resultDiv.appendChild(mergeBanner);
+                const wrap = document.createElement('div');
+                wrap.innerHTML = renderMarkdown(md);
+                resultDiv.appendChild(wrap);
+                charCountEl.textContent = md.length.toLocaleString();
+                setProgress(Math.min(95, 72 + Math.floor(md.length / 130)));
+              }
+            }
+          });
+
+          if (result.merged.length > 0) {
+            acc = result.merged;
+            inputTokens += result.inputTokens;
+            outputTokens += result.outputTokens;
+            searchCount += result.searchCount;
+            searchCountEl.textContent = searchCount;
+            mergedThisRun = true;
+            mergeBanner.classList.add('done');
+            mergeBanner.innerHTML = `✅ <strong>統合完了</strong> — ${todayKey} の前回版と新版を 1 件にマージ (統合中 web_search ${result.searchCount} 回 / 入力 ${result.inputTokens.toLocaleString()}tk + 出力 ${result.outputTokens.toLocaleString()}tk)`;
+            addActivity(`✅ 統合完了: ${acc.length.toLocaleString()} 文字`);
+          } else {
+            mergeBanner.remove();
+            addActivity('⚠️ 統合結果が空、新版のみ保存');
+          }
+        } catch (e) {
+          if (e.name === 'AbortError') {
+            mergeBanner.remove();
+            throw e;
+          }
+          mergeBanner.remove();
+          addActivity(`⚠️ 統合失敗 (新版のみ保存): ${e.message}`);
+        }
+      }
+    }
+
     setProgress(100);
     setPhase('✅ 完了');
     addActivity(`✅ 完了: ${acc.length.toLocaleString()} 文字 / 検索 ${searchCount} 回`);
@@ -1138,7 +1311,7 @@ ${additional ? `- ユーザー追加要望: ${additional} (このテーマを重
     cs.className = 'cost-summary';
     cs.innerHTML = `💵 コスト概算: <strong>$${total.toFixed(4)}</strong> (≈ ¥${Math.round(total * 155).toLocaleString()}, 1USD=¥155 換算)
       <br>📊 入力 ${inputTokens.toLocaleString()}tk + 出力 ${estOut.toLocaleString()}tk + 検索 ${searchCount} 回
-      <br>📡 事前取得: Google News RSS ${localItemCount} 件 (URL捏造防止)
+      <br>📡 事前取得: Google News RSS ${localItemCount} 件 (URL捏造防止)${mergedThisRun ? '<br>🔀 同日アーカイブと統合済み (重複・類似記事を1件に統合)' : ''}
       <br>🔍 各ニュースの右にある「深掘り」ボタンを押すと、その記事を web_search で 4〜6 回深掘りした詳細レポートが出ます。`;
     resultDiv.appendChild(cs);
 
