@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>📰 ニュース収集 (野田市 / 三沢市 深掘り) | Powered by Claude</title>
+<title>📰 ニュース収集 (最大3地域 深掘り) | Powered by Claude</title>
 <style>
 :root {
   --bg: #000000;
@@ -95,6 +95,10 @@ header .version { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
 .card.collapsed .card-title { margin-bottom: 0; }
 .card.collapsed .card-toggle-icon { transform: rotate(-90deg); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.region-rows { display: flex; flex-direction: column; gap: 8px; }
+.region-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.region-row .region-name { flex: 0 1 180px; min-width: 140px; }
+.region-row .region-query { flex: 1 1 280px; min-width: 200px; }
 input[type="password"], input[type="text"], textarea {
   flex: 1;
   min-width: 200px;
@@ -477,7 +481,7 @@ footer a { color: var(--text-muted); }
 <div class="container">
   <header>
     <h1>📰 ニュース収集</h1>
-    <p class="subtitle">本日のニュース + 千葉県野田市付近 / 青森県三沢市付近 を深掘り</p>
+    <p class="subtitle">本日のニュース + ユーザー指定の地域(最大3箇所)を深掘り</p>
     <p class="version" id="versionTag">v1.0.0</p>
   </header>
 
@@ -503,6 +507,32 @@ footer a { color: var(--text-muted); }
   <div class="card">
     <div class="card-title">📝 追加要望 (任意)</div>
     <textarea id="additional" placeholder="例: AI / 円安 / 米中関係 / 半導体 など気になるテーマを書くとそこを重点的に検索します"></textarea>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📍 深掘り地域 (最大3箇所、空欄はスキップ)</div>
+    <div class="region-rows" id="regionRows">
+      <div class="region-row" data-idx="0">
+        <input type="text" class="region-name" placeholder="表示名 (例: 野田市)" autocomplete="off">
+        <input type="text" class="region-query" placeholder="検索キーワード (例: 千葉県 野田市 OR 流山市 OR 柏市)" autocomplete="off">
+      </div>
+      <div class="region-row" data-idx="1">
+        <input type="text" class="region-name" placeholder="表示名 (例: 三沢市)" autocomplete="off">
+        <input type="text" class="region-query" placeholder="検索キーワード (例: 青森県 三沢市 OR 八戸市 OR 十和田市)" autocomplete="off">
+      </div>
+      <div class="region-row" data-idx="2">
+        <input type="text" class="region-name" placeholder="表示名 (3箇所目, 任意)" autocomplete="off">
+        <input type="text" class="region-query" placeholder="検索キーワード (任意)" autocomplete="off">
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px; gap:6px;">
+      <button type="button" class="icon-btn" id="saveRegions" title="地域を保存">💾 地域を保存</button>
+      <button type="button" class="icon-btn" id="resetRegions" title="デフォルト(野田/三沢)に戻す">↺ デフォルト</button>
+      <button type="button" class="icon-btn" id="clearRegions" title="全クリア">🗑 全クリア</button>
+    </div>
+    <div class="notice">
+      💡 表示名のみでも検索可。「検索キーワード」を埋めると Google News RSS の検索精度が上がります(例: 周辺市町村を OR で列挙)。
+    </div>
   </div>
 
   <div class="card">
@@ -598,6 +628,38 @@ const resultDiv = $('result');
 const STORAGE_KEY = 'anthropic_api_key_news_standalone';
 const TOKEN_STORAGE_KEY = 'anthropic_news_token_level';
 const SEARCH_STORAGE_KEY = 'anthropic_news_search_level';
+const REGIONS_STORAGE_KEY = 'news_standalone_regions_v1';
+const GEOCODE_CACHE_KEY = 'news_standalone_geocode_cache_v1';
+
+const DEFAULT_REGIONS = [
+  { name: '野田市', query: '千葉県 野田市 OR 流山市 OR 柏市 OR 我孫子市' },
+  { name: '三沢市', query: '青森県 三沢市 OR 八戸市 OR 十和田市 OR おいらせ町' },
+  { name: '', query: '' }
+];
+
+function getRegionRows() {
+  return Array.from(document.querySelectorAll('#regionRows .region-row'));
+}
+function readRegionsFromUI() {
+  return getRegionRows().map(row => ({
+    name: row.querySelector('.region-name').value.trim(),
+    query: row.querySelector('.region-query').value.trim()
+  }));
+}
+function writeRegionsToUI(regions) {
+  const rows = getRegionRows();
+  rows.forEach((row, i) => {
+    const r = regions[i] || { name: '', query: '' };
+    row.querySelector('.region-name').value = r.name || '';
+    row.querySelector('.region-query').value = r.query || '';
+  });
+}
+function activeRegions() {
+  return readRegionsFromUI()
+    .map(r => ({ name: r.name, query: (r.query || r.name).trim() }))
+    .filter(r => r.name || r.query)
+    .slice(0, 3);
+}
 const ARCHIVE_KEY_PREFIX = 'news_archive_';
 const ARCHIVE_KEEP = 60;
 
@@ -718,6 +780,40 @@ $('resetSliders').addEventListener('click', () => {
 
 updateCostEstimate();
 
+// ===== Regions (max 3 user-specified) =====
+(function loadSavedRegions() {
+  try {
+    const raw = localStorage.getItem(REGIONS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        writeRegionsToUI(parsed.slice(0, 3));
+        return;
+      }
+    }
+  } catch (e) { /* ignore */ }
+  writeRegionsToUI(DEFAULT_REGIONS);
+})();
+
+$('saveRegions').addEventListener('click', () => {
+  const regions = readRegionsFromUI();
+  localStorage.setItem(REGIONS_STORAGE_KEY, JSON.stringify(regions));
+  const active = activeRegions();
+  showStatus(`✅ 地域を保存しました (${active.length} 箇所有効)`, 'info');
+});
+$('resetRegions').addEventListener('click', () => {
+  writeRegionsToUI(DEFAULT_REGIONS);
+  localStorage.setItem(REGIONS_STORAGE_KEY, JSON.stringify(DEFAULT_REGIONS));
+  showStatus('↺ デフォルト (野田市 / 三沢市) に戻しました', 'info');
+});
+$('clearRegions').addEventListener('click', () => {
+  if (!confirm('指定地域をすべてクリアしますか？')) return;
+  const empty = [{name:'',query:''},{name:'',query:''},{name:'',query:''}];
+  writeRegionsToUI(empty);
+  localStorage.setItem(REGIONS_STORAGE_KEY, JSON.stringify(empty));
+  showStatus('🗑 地域指定を全クリアしました', 'info');
+});
+
 // ===== Google News RSS fetcher =====
 async function fetchGoogleNewsRSS(query, maxItems) {
   maxItems = maxItems || 8;
@@ -772,14 +868,45 @@ ${sections}
 }
 
 // ===== Open-Meteo weather (optional, lightweight) =====
-const CITIES = [
-  { name: '青森', emoji: '🍎', lat: 40.82, lon: 140.74 },
-  { name: '三沢', emoji: '✈️', lat: 40.69, lon: 141.37 },
+const BASE_CITIES = [
   { name: '東京', emoji: '🗼', lat: 35.68, lon: 139.69 },
-  { name: '野田',  emoji: '🏯', lat: 35.95, lon: 139.87 },
   { name: '大阪', emoji: '🏯', lat: 34.69, lon: 135.50 },
   { name: '札幌', emoji: '❄️', lat: 43.06, lon: 141.35 }
 ];
+
+function loadGeocodeCache() {
+  try { return JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveGeocodeCache(c) {
+  try { localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(c)); } catch {}
+}
+async function geocodeRegion(name) {
+  if (!name) return null;
+  const cache = loadGeocodeCache();
+  if (cache[name]) return cache[name];
+  try {
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=ja&format=json`;
+    const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const r = data && Array.isArray(data.results) && data.results[0];
+    if (!r) return null;
+    const entry = { name, lat: r.latitude, lon: r.longitude };
+    cache[name] = entry;
+    saveGeocodeCache(cache);
+    return entry;
+  } catch { return null; }
+}
+async function buildCityList(regions) {
+  const regionCities = [];
+  for (const r of regions) {
+    if (!r.name) continue;
+    const g = await geocodeRegion(r.name);
+    if (g) regionCities.push({ name: r.name, emoji: '📍', lat: g.lat, lon: g.lon });
+  }
+  return [...regionCities, ...BASE_CITIES];
+}
 function wmoEmoji(c) {
   if (c == null) return { e: '❓', l: '不明' };
   if (c === 0) return { e: '☀️', l: '快晴' };
@@ -793,9 +920,10 @@ function wmoEmoji(c) {
   if (c <= 86) return { e: '❄️', l: 'にわか雪' };
   return { e: '⛈', l: '雷雨' };
 }
-async function fetchWeather() {
-  const lats = CITIES.map(c => c.lat).join(',');
-  const lons = CITIES.map(c => c.lon).join(',');
+async function fetchWeather(cities) {
+  if (!cities || cities.length === 0) return [];
+  const lats = cities.map(c => c.lat).join(',');
+  const lons = cities.map(c => c.lon).join(',');
   const params = new URLSearchParams({
     latitude: lats, longitude: lons,
     current: 'temperature_2m,weather_code',
@@ -806,7 +934,7 @@ async function fetchWeather() {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   const arr = Array.isArray(data) ? data : [data];
-  return CITIES.map((c, i) => {
+  return cities.map((c, i) => {
     const d = arr[i] || {};
     const cur = d.current || {}; const daily = d.daily || {};
     const tMax = daily.temperature_2m_max || []; const tMin = daily.temperature_2m_min || [];
@@ -1133,6 +1261,7 @@ async function analyze() {
   const apiKey = apiKeyInput.value.trim();
   if (!apiKey) { showStatus('⚠️ APIキーを入力してください', 'error'); return; }
   const additional = additionalInput.value.trim();
+  const regions = activeRegions();
   const today = new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' });
 
   runBtn.classList.add('stop-mode');
@@ -1152,37 +1281,69 @@ async function analyze() {
   charCountEl.textContent = '0';
   costEstEl.textContent = '$0.000';
 
+  if (regions.length === 0) {
+    addActivity('ℹ️ 深掘り地域は指定されていません(全国・世界ニュースのみ)');
+  } else {
+    addActivity(`📍 深掘り地域: ${regions.map(r => r.name || r.query).join(' / ')}`);
+  }
+
   // Pre-fetch weather (optional, fast)
   let weatherBlock = '';
   try {
-    const w = await fetchWeather();
+    const cities = await buildCityList(regions);
+    const w = await fetchWeather(cities);
     weatherBlock = buildWeatherBlock(w);
     addActivity(`✅ Open-Meteo: ${w.length} 都市の天気取得`);
   } catch (e) {
     addActivity(`⚠️ 天気取得失敗: ${e.message}`);
   }
 
-  // Pre-fetch local news RSS
+  // Pre-fetch local news RSS (per active region)
   let localNewsBlock = '';
   let localItemCount = 0;
+  const regionItemCounts = [];
   try {
-    addActivity('📡 Google News RSS 取得中 (野田市 / 三沢市付近)...');
-    const [noda, misawa] = await Promise.all([
-      fetchGoogleNewsRSS('千葉県 野田市 OR 流山市 OR 柏市 OR 我孫子市', 8),
-      fetchGoogleNewsRSS('青森県 三沢市 OR 八戸市 OR 十和田市 OR おいらせ町', 8)
-    ]);
-    localItemCount = noda.length + misawa.length;
-    localNewsBlock = buildLocalNewsPromptBlock([
-      { label: '🏯 千葉県野田市付近 (野田市・流山市・柏市・我孫子市)', items: noda },
-      { label: '✈️ 青森県三沢市付近 (三沢市・八戸市・十和田市・おいらせ町)', items: misawa }
-    ]);
-    addActivity(`✅ ローカル RSS: 野田 ${noda.length} 件 / 三沢 ${misawa.length} 件`);
+    if (regions.length > 0) {
+      addActivity(`📡 Google News RSS 取得中 (${regions.length} 地域)...`);
+      const results = await Promise.all(regions.map(r => fetchGoogleNewsRSS(r.query || r.name, 8)));
+      const groups = regions.map((r, i) => {
+        const items = results[i] || [];
+        localItemCount += items.length;
+        regionItemCounts.push({ name: r.name || r.query, count: items.length });
+        return { label: `📍 ${r.name || r.query} 付近`, items };
+      });
+      localNewsBlock = buildLocalNewsPromptBlock(groups);
+      addActivity(`✅ ローカル RSS: ${regionItemCounts.map(x => `${x.name} ${x.count}件`).join(' / ')}`);
+    }
   } catch (e) {
     addActivity(`⚠️ ローカル RSS 失敗: ${e.message}`);
   }
 
   setProgress(8);
   setPhase('🚀 Claude Haiku 4.5 にリクエスト送信...');
+
+  const regionListText = regions.length > 0
+    ? regions.map(r => r.name || r.query).join(' / ')
+    : '(指定なし)';
+  const regionSections = regions.length > 0
+    ? regions.map(r => {
+        const label = r.name || r.query;
+        return `### 📍 ${label} 付近
+- **${label}** [ニュースタイトル](実URL)
+  - 1〜2 行サマリ + (出典: 媒体名 / 日付)
+- (5〜8 件)`;
+      }).join('\n\n')
+    : '(地域指定がないためこのセクションは省略)';
+  const localBlockHeader = regions.length > 0
+    ? `## 🏘 ローカル深掘り (${regionListText})
+★ 重点エリア ★ 各エリア 5〜8 件、できるだけ最新の地域ニュース。
+すべての項目に [タイトル](URL) markdown リンク必須。
+
+${regionSections}`
+    : '';
+  const weatherRegionHint = regions.length > 0
+    ? `★ ${regions.map(r => r.name || r.query).join('・')} を含めて全都市を表示`
+    : '★ BASE_CITIES の都市を表示';
 
   const prompt = `あなたは ${today} 時点のニュース・キュレーターです。
 銘柄分析や投資推奨は行わず、★ 本日のニュースを集めて視覚的に整理する ★ ことだけが仕事です。
@@ -1196,7 +1357,7 @@ ${weatherBlock}${localNewsBlock}
 - web_search を ★ 最大 ${MAX_SEARCHES} 回 ★ まで実施(上限に達したら直ちに出力開始)
 - 政治的中立・事実報道(主観・意見は最小限)
 - 複数の地域・トピックを ★ 広く ★ カバーする
-- ★ ローカル深掘り (千葉県野田市付近 / 青森県三沢市付近) は web_search で追加で深く掘り下げてよい(各エリア 5〜8 件目標)
+${regions.length > 0 ? `- ★ ローカル深掘り (${regionListText}) は web_search で追加で深く掘り下げてよい(各エリア 5〜8 件目標)` : '- ユーザー指定の深掘り地域はなし(全国・世界・経済を広くカバー)'}
 ${additional ? `- ユーザー追加要望: ${additional} (このテーマを重点的に)` : ''}
 
 【出力フォーマット】(Markdown / 視覚的に絵文字と表を活用)
@@ -1206,19 +1367,7 @@ ${additional ? `- ユーザー追加要望: ${additional} (このテーマを重
 ## 🇯🇵 国内主要ニュース
 3〜5 件。各件: **タイトル** / 日付 / [媒体名](URL) / 1〜2 行サマリ。
 
-## 🏘 ローカル深掘り (千葉県野田市付近 / 青森県三沢市付近)
-★ 重点エリア ★ 各エリア 5〜8 件、できるだけ最新の地域ニュース。
-すべての項目に [タイトル](URL) markdown リンク必須。
-
-### 🏯 千葉県野田市付近 (野田市・流山市・柏市・我孫子市・松戸市・川間・関宿)
-- **野田市** [ニュースタイトル](実URL)
-  - 1〜2 行サマリ + (出典: 媒体名 / 日付)
-- (5〜8 件)
-
-### ✈️ 青森県三沢市付近 (三沢市・八戸市・十和田市・おいらせ町・東北町)
-- **三沢市** [ニュースタイトル](実URL)
-  - 1〜2 行サマリ + (出典: 媒体名 / 日付)
-- (5〜8 件)
+${localBlockHeader}
 
 ## 🏘 その他ローカル・地方ニュース
 2〜3 件。北海道・東北・関東・中部・関西・中国・四国・九州沖縄 から多様にカバー。
@@ -1233,7 +1382,7 @@ ${additional ? `- ユーザー追加要望: ${additional} (このテーマを重
   - 上の【全国7日間天気予報】データをそのまま整形して markdown 表に
   - 列: 都市 / 日付1 / 日付2 / 日付3 / 日付4 / 日付5 / 日付6 / 日付7
   - 各セル: 絵文字 + 最低〜最高°C (降水があれば併記)
-  - ★ 青森・三沢・野田 を含めて全都市を表示
+  - ${weatherRegionHint}
 - **本日の特記**: 注意報・警報があれば 1〜2 行 (web_search で取得可)
 
 ## 💼 経済・金融市場
